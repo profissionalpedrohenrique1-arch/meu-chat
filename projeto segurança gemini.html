@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>SafeChat IA - Mobile Ready</title>
+    <style>
+        :root { --bg: #1e1f22; --sidebar: #2b2d31; --chat: #313338; --accent: #5865f2; --text: #dbdee1; --online: #23a55a; --danger: #ed4245; }
+        body, html { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+        #app { display: none; height: 100vh; flex-direction: row; }
+        
+        /* Layout Estilo Discord */
+        #server-list { width: 72px; background: #1e1f22; display: flex; flex-direction: column; align-items: center; padding: 15px 0; gap: 12px; }
+        #sidebar { width: 240px; background: var(--sidebar); display: flex; flex-direction: column; position: relative; }
+        #chat-area { flex: 1; display: flex; flex-direction: column; background: var(--chat); position: relative; }
+
+        /* Interface de Call Central */
+        #voice-grid { display: none; flex: 1; background: #000; padding: 10px; gap: 10px; grid-template-columns: 1fr 1fr; align-items: center; }
+        .voice-card { background: #333; border-radius: 8px; height: 100%; display: flex; align-items: center; justify-content: center; position: relative; }
+        .voice-card img { width: 80px; height: 80px; border-radius: 50%; border: 3px solid var(--accent); }
+
+        /* Painel Inferior de Conexão */
+        #connection-panel { position: absolute; bottom: 0; width: 100%; background: #232428; padding: 10px; box-sizing: border-box; display: none; border-top: 1px solid #3f4147; }
+        .conn-status { color: var(--online); font-size: 13px; font-weight: bold; display: flex; align-items: center; gap: 5px; margin-bottom: 8px; }
+        .action-btns { display: flex; gap: 8px; }
+        .btn-icon { background: #35373c; border: none; color: white; padding: 8px; border-radius: 4px; flex: 1; cursor: pointer; }
+        .btn-hangup { background: var(--danger); }
+
+        /* Canais */
+        .canal-item { padding: 8px 10px; margin: 2px 8px; cursor: pointer; border-radius: 4px; color: #8e9297; display: flex; align-items: center; gap: 8px; }
+        .canal-active { background: #3f4147; color: white; }
+        .user-in-call { display: flex; align-items: center; gap: 8px; padding: 4px 25px; font-size: 13px; color: #b5bac1; }
+        .live-badge { background: var(--danger); color: white; font-size: 10px; padding: 2px 4px; border-radius: 3px; font-weight: bold; }
+        
+        .server-icon { width: 48px; height: 48px; background: #313338; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .active-srv { border-radius: 15px; background: var(--accent); }
+    </style>
+</head>
+<body>
+
+    <div id="login-screen" style="position:fixed; inset:0; background:rgba(0,0,0,0.9); z-index:9999; display:flex; align-items:center; justify-content:center;">
+        <div style="background:var(--sidebar); padding:30px; border-radius:8px; text-align:center;">
+            <h2>Entrar no SafeChat</h2>
+            <input type="text" id="user-in" placeholder="Seu nome" style="padding:10px; width:200px; border-radius:4px; border:none;">
+            <button onclick="logar()" style="padding:10px 20px; background:var(--accent); color:white; border:none; border-radius:4px; cursor:pointer; margin-top:10px; display:block; width:100%;">Entrar</button>
+        </div>
+    </div>
+
+    <div id="app">
+        <div id="server-list">
+            <div class="server-icon active-srv" onclick="location.reload()">🏠</div>
+            <div id="custom-srvs"></div>
+            <div class="server-icon" style="color:var(--online)" onclick="addSrv()">+</div>
+        </div>
+
+        <div id="sidebar">
+            <div id="srv-header" style="padding:15px; font-weight:bold; border-bottom:1px solid #111;">Servidor</div>
+            <div id="channel-list" style="flex:1; padding-top:10px;"></div>
+            
+            <div id="connection-panel">
+                <div class="conn-status">📡 Voz conectada</div>
+                <div class="action-btns">
+                    <button class="btn-icon">🎤</button>
+                    <button class="btn-icon">🎧</button>
+                    <button class="btn-icon btn-hangup" onclick="desconectarVoz()">Hangup</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="chat-area">
+            <div id="voice-grid">
+                <div class="voice-card">
+                    <img src="https://ui-avatars.com/api/?name=User&background=random" id="call-avatar">
+                    <span style="position:absolute; bottom:10px; left:10px; font-size:12px;" id="call-name">Nome</span>
+                </div>
+                <div class="voice-card" style="background:#1a1a1a; color:#555;">Aguardando...</div>
+            </div>
+
+            <div id="messages" style="flex:1; padding:20px; overflow-y:auto;"></div>
+            <div id="input-box" style="padding:20px; background:var(--chat);">
+                <input type="text" id="chat-in" placeholder="Enviar mensagem..." style="width:100%; padding:12px; border-radius:4px; border:1px solid #444; background:#1e1f22; color:white;">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let db = JSON.parse(localStorage.getItem('safechat_v3')) || {
+            user: { name: "" }, srvs: {}, activeSrv: '', activeChan: ''
+        };
+
+        const save = () => localStorage.setItem('safechat_v3', JSON.stringify(db));
+
+        // VERIFICADOR DE BANIMENTO
+        setInterval(() => {
+            const banidos = JSON.parse(localStorage.getItem('banidos') || "[]");
+            if(db.user.name && banidos.includes(db.user.name)) {
+                document.body.innerHTML = `<div style="background:#000; color:red; height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;"><h1>🚫 CONTA BLOQUEADA</h1><p>Banido por comportamento inadequado.</p></div>`;
+            }
+        }, 1000);
+
+        function logar() {
+            const n = document.getElementById('user-in').value;
+            if(n) { db.user.name = n; save(); location.reload(); }
+        }
+
+        if(db.user.name) {
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('app').style.display = 'flex';
+            render();
+        }
+
+        function addSrv() {
+            const n = prompt("Nome do Servidor:");
+            if(n) {
+                const id = "s" + Date.now();
+                db.srvs[id] = { n: n, canais: { 'geral': { t: 'texto', msg: [] }, 'Voz 1': { t: 'voz', in: false } } };
+                if(!db.activeSrv) db.activeSrv = id;
+                save(); render();
+            }
+        }
+
+        function render() {
+            const srvBox = document.getElementById('custom-srvs');
+            srvBox.innerHTML = "";
+            Object.keys(db.srvs).forEach(id => {
+                const div = document.createElement('div');
+                div.className = `server-icon ${db.activeSrv === id ? 'active-srv' : ''}`;
+                div.innerText = db.srvs[id].n[0];
+                div.onclick = () => { db.activeSrv = id; db.activeChan = 'geral'; render(); };
+                srvBox.appendChild(div);
+            });
+
+            if(db.activeSrv) renderChannels();
+        }
+
+        function renderChannels() {
+            const srv = db.srvs[db.activeSrv];
+            document.getElementById('srv-header').innerText = srv.n;
+            const box = document.getElementById('channel-list');
+            box.innerHTML = "";
+            let naCall = false;
+
+            Object.keys(srv.canais).forEach(cName => {
+                const c = srv.canais[cName];
+                const div = document.createElement('div');
+                div.className = `canal-item ${db.activeChan === cName ? 'canal-active' : ''}`;
+                div.innerHTML = `${c.t === 'texto' ? '#' : '🔊'} ${cName}`;
+                div.onclick = () => {
+                    if(c.t === 'voz') { 
+                        c.in = true; 
+                        db.activeChan = cName;
+                    } else { 
+                        db.activeChan = cName; 
+                    }
+                    save(); render();
+                };
+                box.appendChild(div);
+
+                if(c.t === 'voz' && c.in) {
+                    box.innerHTML += `<div class="user-in-call">👤 ${db.user.name} <span class="live-badge">AO VIVO</span></div>`;
+                    naCall = true;
+                }
+            });
+
+            // Gerenciar Interface de Call vs Chat
+            const isVoz = srv.canais[db.activeChan]?.t === 'voz';
+            document.getElementById('messages').style.display = isVoz ? 'none' : 'block';
+            document.getElementById('input-box').style.display = isVoz ? 'none' : 'block';
+            document.getElementById('voice-grid').style.display = isVoz ? 'grid' : 'none';
+            document.getElementById('connection-panel').style.display = naCall ? 'block' : 'none';
+            
+            if(isVoz) {
+                document.getElementById('call-name').innerText = db.user.name;
+                document.getElementById('call-avatar').src = `https://ui-avatars.com/api/?name=${db.user.name}&background=random`;
+            }
+
+            document.getElementById('messages').innerHTML = srv.canais[db.activeChan]?.msg?.map(m => `<div>${m}</div>`).join("") || "";
+        }
+
+        function desconectarVoz() {
+            const srv = db.srvs[db.activeSrv];
+            Object.keys(srv.canais).forEach(c => { if(srv.canais[c].t === 'voz') srv.canais[c].in = false; });
+            db.activeChan = 'geral';
+            save(); render();
+        }
+
+        document.getElementById('chat-in').onkeypress = function(e) {
+            if(e.key === 'Enter' && this.value) {
+                db.srvs[db.activeSrv].canais[db.activeChan].msg.push(`<b>${db.user.name}:</b> ${this.value}`);
+                this.value = ""; save(); render();
+            }
+        };
+    </script>
+</body>
+</html>

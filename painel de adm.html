@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Painel Master - SafeChat IA</title>
+    <style>
+        :root { --danger: #ed4245; --bg: #1e1f22; --card: #2b2d31; --accent: #5865f2; --success: #23a55a; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: white; padding: 20px; margin: 0; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .stats { display: flex; gap: 20px; margin-bottom: 30px; }
+        .card { background: var(--card); padding: 20px; border-radius: 12px; flex: 1; text-align: center; border: 1px solid #3f4147; }
+        
+        h2 { border-bottom: 1px solid #333; padding-bottom: 10px; margin-top: 40px; }
+        table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 10px; overflow: hidden; margin-bottom: 20px; }
+        th { background: #383a40; padding: 15px; text-align: left; color: #b5bac1; }
+        td { padding: 15px; border-bottom: 1px solid #3f4147; }
+        
+        .btn-ban { background: var(--danger); border: none; color: white; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .btn-unban { background: var(--success); border: none; color: white; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .btn-ctx { background: var(--accent); border: none; color: white; padding: 8px 15px; border-radius: 5px; cursor: pointer; margin-right: 5px; }
+        .obs-text { font-size: 12px; color: #aaa; display: block; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🛡️ Central de Moderação IA</h1>
+        <button onclick="localStorage.clear(); location.reload();" style="background:#444; color:white; border:none; padding:10px; border-radius:5px; cursor:pointer;">Resetar Sistema (Limpar Tudo)</button>
+    </div>
+
+    <div class="stats">
+        <div class="card"><h2 id="total">0</h2><p>Alertas de Toxicidade</p></div>
+        <div class="card"><h2 id="bans" style="color: var(--danger);">0</h2><p>Usuários Bloqueados</p></div>
+    </div>
+
+    <h2>⚠️ Alertas Recentes (IA)</h2>
+    <table>
+        <thead>
+            <tr><th>Usuário</th><th>Incidente</th><th>Data/Hora</th><th>Ações</th></tr>
+        </thead>
+        <tbody id="alert-table"></tbody>
+    </table>
+
+    <h2>🚫 Lista de Banidos</h2>
+    <table>
+        <thead>
+            <tr><th>Usuário</th><th>Motivo Original</th><th>Ações</th></tr>
+        </thead>
+        <tbody id="ban-table"></tbody>
+    </table>
+
+    <script>
+        function atualizar() {
+            const alertas = JSON.parse(localStorage.getItem('alertas') || "[]");
+            const banidos = JSON.parse(localStorage.getItem('banidos') || "[]");
+            const desban_logs = JSON.parse(localStorage.getItem('desban_logs') || "{}");
+
+            document.getElementById('total').innerText = alertas.length;
+            document.getElementById('bans').innerText = banidos.length;
+
+            // Tabela de Alertas
+            const tabelaAlertas = document.getElementById('alert-table');
+            tabelaAlertas.innerHTML = "";
+            alertas.reverse().forEach((a, i) => {
+                tabelaAlertas.innerHTML += `<tr>
+                    <td><b>@${a.user}</b></td>
+                    <td><span style="color:#faa61a">"${a.msg}"</span></td>
+                    <td>${a.data}</td>
+                    <td>
+                        <button class="btn-ctx" onclick="verContexto(${alertas.length-1-i})">Contexto</button>
+                        <button class="btn-ban" onclick="banir('${a.user}')">Banir</button>
+                    </td>
+                </tr>`;
+            });
+
+            // Tabela de Banidos
+            const tabelaBanidos = document.getElementById('ban-table');
+            tabelaBanidos.innerHTML = "";
+            banidos.forEach(user => {
+                tabelaBanidos.innerHTML += `<tr>
+                    <td><b>@${user}</b></td>
+                    <td>Aguardando revisão ou banimento permanente.</td>
+                    <td>
+                        <button class="btn-unban" onclick="desbanir('${user}')">Desbanir</button>
+                    </td>
+                </tr>`;
+            });
+        }
+
+        function verContexto(idx) {
+            const alertas = JSON.parse(localStorage.getItem('alertas') || "[]");
+            const a = alertas[idx];
+            alert("--- HISTÓRICO DE MENSAGENS ---\n\n" + a.contexto.join("\n") + "\n\nSINALIZADO: " + a.msg);
+        }
+
+        function banir(nome) {
+            let b = JSON.parse(localStorage.getItem('banidos') || "[]");
+            if(!b.includes(nome)) {
+                b.push(nome);
+                localStorage.setItem('banidos', JSON.stringify(b));
+                alert("Usuário " + nome + " foi banido!");
+            }
+            atualizar();
+        }
+
+        function desbanir(nome) {
+            const obs = prompt("Observação: Por que este usuário está sendo desbanido?");
+            
+            if (obs !== null) { // Se não cancelou o prompt
+                let b = JSON.parse(localStorage.getItem('banidos') || "[]");
+                b = b.filter(u => u !== nome);
+                localStorage.setItem('banidos', JSON.stringify(b));
+
+                // Salva o log do desbanimento (para registro futuro)
+                let logs = JSON.parse(localStorage.getItem('desban_logs') || "[]");
+                logs.push({ user: nome, motivo: obs, data: new Date().toLocaleString() });
+                localStorage.setItem('desban_logs', JSON.stringify(logs));
+
+                alert("Usuário desbanido com sucesso!\nMotivo: " + obs);
+                atualizar();
+            }
+        }
+
+        setInterval(atualizar, 1000);
+        atualizar();
+    </script>
+</body>
+</html>
